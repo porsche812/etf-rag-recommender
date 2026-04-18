@@ -1,0 +1,13 @@
+# 보안 파일
+.env
+
+# 파이썬 임시 파일
+__pycache__/
+*.pyc
+
+# 가상환경
+.venv/
+venv/
+
+# 기타 OS 파일
+.DS_Store
