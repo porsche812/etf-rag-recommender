@@ -1,11 +1,26 @@
+# etf_rag_system/data/mock_data.py (또는 데이터 정의 파일)
+
+# ==============================================================================
+# [데이터 모듈 핵심 기능 요약]
+# 1. 고품질 기초 데이터(Seed): 실제 시장에 있는 대표 ETF 12개의 상세 스펙을 정의합니다.
+# 2. 대량의 모의 데이터 생성(Mocking): RAG 시스템의 검색 성능을 한계까지 테스트하기 위해, 패턴을 조합하여 200개의 가상 데이터를 덧붙입니다.
+# 3. 평가용 질의응답(Eval QA): RAG 시스템이 제대로 답변을 찾아오는지 채점하기 위한 '정답지'를 만듭니다.
+# 4. Langchain Document 변환: 딕셔너리 형태의 데이터를 LLM과 벡터DB가 가장 잘 이해할 수 있는 '고해상도 텍스트 덩어리'로 포맷팅합니다.
+# ==============================================================================
+
+# 데이터프레임 형식으로 데이터를 다루거나 내보낼 때 사용합니다. (현재 코드에선 안 쓰이지만 확장성을 위해 남겨둠)
 import pandas as pd
+# 수백 개의 가상 ETF 데이터를 무작위로 생성하기 위해 사용합니다.
 import random
 
 # ==========================================
 # 1. 기존 데이터 세분화 (Weekend 3)
-# - 추가된 특징: region(국가지역), investment_style(투자스타일), distribution_freq(배당주기), currency_hedge(환헤지여부)
+# - 왜 세분화했나?: 단순한 이름/설명만으로는 사용자의 복잡한 요구(예: "미국 주식이면서 배당 주는 거")를 처리하기 어렵습니다.
+# - 추가된 특징: region(국가지역), investment_style(투자스타일), distribution_freq(배당주기), currency_hedge(환헤지여부) 등을 추가해 필터링의 정밀도를 높였습니다.
 # ==========================================
 etf_data = [
+    # 각 딕셔너리는 하나의 ETF 문서를 의미합니다.
+    # LLM이 답변을 생성할 때 참고할 수 있도록 숫자로 된 지표(수수료, 수익률 등)와 자연어(설명, 키워드)를 골고루 배치했습니다.
     {"name": "KODEX 200", "category": "국내주식", "region": "국내", "investment_style": "인덱스", "distribution_freq": "분기배당", "currency_hedge": "환노출",
      "expense_ratio": 0.15, "return_1y": 8.5, "risk_level": "중간", "dividend_yield": 1.8, "volatility": 15.2,
      "keywords": ["코스피", "대형주", "인덱스", "분산투자", "국내주식"],
@@ -69,11 +84,14 @@ etf_data = [
 
 # ==========================================
 # 2. 고도화된 RAG 테스트용 더미 데이터 생성 로직 (200개)
+# - 왜 만들었나?: 데이터가 12개뿐이면 그냥 검색해도 다 나오기 때문에, 검색 엔진(BM25, 벡터, 하이브리드)의 진짜 성능(노이즈 속에서 정답 찾기)을 테스트할 수 없습니다. 
+# 이를 위해 다양한 테마와 현실적인 수치를 가진 가짜 데이터를 200개 생성해 DB를 빵빵하게 채웁니다.
 # ==========================================
 def generate_mock_etfs(count=200):
+    # ETF 운용사 브랜드
     brands = ["KODEX", "TIGER", "ACE", "KBSTAR", "ARIRANG", "SOL"]
     
-    # 세분화된 테마 풀 (배당 안에서도 커버드콜, 배당성장, 고배당 등으로 분리)
+    # 최근 시장 트렌드를 반영한 세분화된 테마 풀
     themes = [
         {"name": "미국배당+7%프리미엄다우존스", "cat": "배당", "reg": "미국", "style": "커버드콜", "freq": "월배당", "desc": "SCHD 지수에 콜옵션 매도 전략을 결합하여 주가 상승을 제한하는 대신 연 7% 이상의 높은 월배당을 지급합니다.", "keys": ["커버드콜", "다우존스", "고배당", "월배당", "인컴"]},
         {"name": "글로벌비만치료제", "cat": "테마", "reg": "글로벌", "style": "메가트렌드", "freq": "연배당", "desc": "노보노디스크, 일라이릴리 등 글로벌 비만 치료제 및 헬스케어 혁신 기업에 집중 투자합니다.", "keys": ["비만치료제", "바이오", "헬스케어", "제약", "글로벌"]},
@@ -92,33 +110,39 @@ def generate_mock_etfs(count=200):
         brand = random.choice(brands)
         theme = random.choice(themes)
         
-        # 특징별 리스크 및 데이터 차등화
+        # 해외 상품이면 무작위로 환헤지(H)를 붙여줍니다.
         hedge_status = random.choice(["환노출", "환헤지(H)"]) if theme["reg"] != "국내" else "환노출"
         
+        # 데이터의 현실성을 부여하는 로직: 테마별로 위험도와 수익률, 변동성의 범위를 다르게 줍니다.
         if theme["cat"] in ["파킹형", "채권"]:
+            # 안전자산: 위험/변동성이 낮고 배당이 일정함
             risk = "매우낮음" if theme["cat"] == "파킹형" else "낮음"
             vol = round(random.uniform(0.5, 6.0), 1)
             ret = round(random.uniform(3.0, 5.5), 1)
             div = round(random.uniform(0.0, 8.0), 1) if theme["freq"] != "TR(재투자)" else 0.0
             exp = round(random.uniform(0.01, 0.07), 2)
         elif theme["style"] == "커버드콜":
+            # 커버드콜: 변동성은 중간, 수익은 제한되지만 배당률이 극단적으로 높음(7~12%)
             risk = "중간"
             vol = round(random.uniform(8.0, 12.0), 1)
             ret = round(random.uniform(-5.0, 10.0), 1)
-            div = round(random.uniform(7.0, 12.0), 1) # 커버드콜은 배당률이 극단적으로 높음
+            div = round(random.uniform(7.0, 12.0), 1)
             exp = round(random.uniform(0.3, 0.5), 2)
         else:
+            # 주식/테마형: 고수익/고위험
             risk = "높음"
             vol = round(random.uniform(18.0, 45.0), 1)
             ret = round(random.uniform(-15.0, 60.0), 1)
             div = round(random.uniform(0.0, 2.0), 1)
             exp = round(random.uniform(0.2, 0.6), 2)
             
+        # 이름 뒤에 꼬리표 붙이기 (중복 방지)
         suffix = ""
         if hedge_status == "환헤지(H)": suffix += "(H)"
         if theme["freq"] == "TR(재투자)": suffix += " TR"
         
         etf_name = f"{brand} {theme['name']}{suffix}"
+        # 이름이 겹치면 뒤에 랜덤 숫자를 붙여서 구별합니다.
         if any(e["name"] == etf_name for e in generated + etf_data):
             etf_name = f"{etf_name} {random.randint(1, 99)}"
 
@@ -140,12 +164,14 @@ def generate_mock_etfs(count=200):
         
     return generated
 
-# 총 200개 생성하여 기존 리스트에 병합 (총 212개)
+# 총 200개 생성하여 기존 12개 리스트에 병합 (총 212개로 테스트 환경 구축)
 etf_data.extend(generate_mock_etfs(200))
 
 
 # ==========================================
-# 3. 확장된 평가 질의
+# 3. 확장된 평가 질의 (Evaluation Dataset)
+# - 왜 만들었나?: 이 RAG 시스템이 얼마나 똑똑한지 자동화된 평가(예: Ragas 프레임워크 등)를 돌리기 위한 '정답지'입니다.
+# 사용자의 다양한 질문 유형(의도)에 맞춰, 검색이 반드시 찾아야 하는 타겟 문서(relevant)를 매핑해 두었습니다.
 # ==========================================
 eval_queries = [
     {"query": "안정적인 배당 ETF를 추천해주세요", "reference": "ACE 미국배당다우존스 ETF를 추천합니다. 미국 고배당 대형주 중심이며 최저 수수료(0.01%)로 안정적 배당수익을 추구합니다.", "relevant": ["ACE 미국배당다우존스", "TIGER 고배당저변동"]},
@@ -158,13 +184,17 @@ eval_queries = [
 
 # ==========================================
 # 4. 고도화된 Langchain Document 변환 함수
-# (LLM이 문맥을 정확히 파악하도록 Document 생성 텍스트의 해상도를 극대화)
+# - 왜 이렇게 텍스트를 짜맞추나?: 임베딩 모델(문장 벡터화 모델)은 단순한 딕셔너리 구조({key: value})보다, 자연어처럼 이어져 있으면서도 정보가 뚜렷하게 나열된 형태의 텍스트를 훨씬 더 잘 '이해'합니다.
+# 이를 "프롬프트/문맥 해상도를 높인다"고 표현하며, 이렇게 명확한 포맷(태그형 텍스트)으로 결합해 두면 LLM이 검색된 문서를 읽고 답변을 작성할 때 환각(Hallucination)이 급격히 줄어듭니다.
 # ==========================================
 def get_documents():
+    # Langchain의 기본 데이터 단위인 Document 클래스를 불러옵니다.
     from langchain_core.documents import Document
     documents = []
+    
     for etf in etf_data:
-        # 이 텍스트 덩어리가 RAG 검색의 핵심이 됩니다. 특징을 명확한 포맷으로 매핑합니다.
+        # 이 변수(text)가 벡터DB에 임베딩되어 실질적인 '검색의 대상'이 됩니다.
+        # "키: 값 | 키: 값" 형태로 촘촘하게 엮어주어, 관련 의미가 공간 상에 가깝게 배치되도록 유도합니다.
         text = (
             f"[{etf['name']}] "
             f"분류: {etf['category']} | 지역: {etf['region']} | 투자전략: {etf['investment_style']} | "
@@ -174,11 +204,17 @@ def get_documents():
             f"지표 -> 수수료: {etf['expense_ratio']}% | 배당수익률: {etf['dividend_yield']}% | "
             f"최근 1년 수익률: {etf['return_1y']:.1f}% | 연환산 변동성: {etf['volatility']:.1f}% | 위험도: {etf['risk_level']}"
         )
+        # 생성된 고해상도 텍스트(page_content)와 원본 딕셔너리 정보(metadata)를 합쳐 Document 객체로 만듭니다.
+        # metadata는 나중에 filtered_search 등에서 '수수료가 0.5 미만인 것' 처럼 조건으로 필터링할 때 쓰입니다.
         documents.append(Document(page_content=text, metadata=etf))
+        
     return documents
 
+
+# 이 스크립트를 직접 실행했을 때 동작하는 테스트 코드입니다.
 if __name__ == "__main__":
     print(f"총 ETF 데이터 개수: {len(etf_data)}개")
     print(f"총 평가 질의 개수: {len(eval_queries)}개")
     print("\n[생성된 고해상도 샘플 Document 텍스트]")
+    # 맨 마지막에 생성된 가상 ETF의 텍스트가 어떻게 만들어졌는지 눈으로 확인합니다.
     print(get_documents()[-1].page_content)
